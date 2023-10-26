@@ -2,6 +2,20 @@ package com.dimdarkevil.bptree
 
 import java.lang.RuntimeException
 
+/**
+ * A B+tree is a tree of nodes, each with up to N keys and up to N+1 pointers to
+ * other nodes. The tree has a root node and leaf nodes. The leaf nodes point to
+ * the records being indexed rather than other nodes. Leaf nodes also point to
+ * their siblings so that the index can be iterated quickly in sorted order.
+ *
+ * Each key in an internal (non-leaf) node has a "left" pointer, which points to 
+ * a node that contains keys less than the key, and a "right" pointer which points 
+ * to a node that contains keys greater than or equal to the key. For adjacent keys 
+ * within a node, the first key's right pointer is the next one's left pointer.
+ *
+ * Because of the way B+trees are built up as new keys are added, all nodes (except
+ * sometimes the root node) will have at least N/2 keys at any given time.
+ */
 class BpTree<K: Comparable<K>, V> : Sequence<KeyVal<K,V>> {
     private val half = N / 2
     private var root: Node<K,V> = LeafNode()
@@ -10,6 +24,24 @@ class BpTree<K: Comparable<K>, V> : Sequence<KeyVal<K,V>> {
         const val N: Int = 4
     }
 
+    /**
+     * Get the current depth of the tree (the number of hops from the root to a leaf)
+     */
+    fun depth(): Int {
+        var n = root
+        var cnt = 0
+        while (n is InternalNode) {
+            n = n.ptrs[0]!!
+            cnt++
+        }
+        return cnt
+    }
+
+    /**
+     * Find the values for a specific key.
+     * @param key the key to search for
+     * @return the values at that key, or null if the key doesn't exist in the tree
+     */
     fun find(key: K): Set<V>? {
         val leaf = findLeafForKey(key)
         val existingIdx = leaf.keys.indexOfFirst { it == key }
@@ -20,6 +52,27 @@ class BpTree<K: Comparable<K>, V> : Sequence<KeyVal<K,V>> {
         }
     }
 
+    /**
+     * Find the values at the nearest key less than or equal to the specified key.
+     * @param key the key to search for
+     * @return a pair with the actual key found and the set of values at that key. If no nearest
+     * value is found, returns the provided key with null values.
+     */
+    fun findNearest(key: K): Pair<K,Set<V>?> {
+        val leaf = findLeafForKey(key)
+        val existingIdx = leaf.keys.indexOfLast { it != null && it <= key }
+        return if (existingIdx >= 0) {
+            Pair(leaf.keys[existingIdx]!!, leaf.values[existingIdx])
+        } else {
+            Pair(key, null)
+        }
+    }
+
+    /**
+     * Insert a value into the tree at the specified key.
+     * @param key the key at which to add the value
+     * @param value the value to add
+     */
     fun insert(key: K, value: V) {
         val leaf = findLeafForKey(key)
         // If the key already exists at the leaf, just insert the new value and return.
@@ -419,7 +472,7 @@ class BpTree<K: Comparable<K>, V> : Sequence<KeyVal<K,V>> {
             }
             if (leaf == null) return
             idx++
-            while (idx < N && leaf!!.keys[idx] != null) idx++
+            while (idx < N && leaf!!.keys[idx] == null) idx++
             if (idx >= N) {
                 advance()
             }
@@ -472,10 +525,10 @@ sealed interface Node<K:Comparable<K>,V> {
     val keys: Array<K?>
 }
 
-// keys and pointers are actually interleaved, like
+// Keys and pointers are actually interleaved, like
 // | ptr | key | ptr | key | ptr |
 // so a key always has a left and right pointer.
-// the left pointer has the same index as the key,
+// The left pointer has the same index as the key,
 // and the right pointer is at the key's index + 1
 @Suppress("UNCHECKED_CAST")
 class InternalNode<K:Comparable<K>,V>(
